@@ -1,4 +1,4 @@
-name: GameHub-Pro-Max-Engine
+name: GameHub Ultimate Engine Build
 
 on:
   push:
@@ -7,21 +7,21 @@ on:
 
 jobs:
   build:
-    name: Build Ultimate Emulator
+    name: Build Ultra IPA
     runs-on: macos-latest
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Setup Environment
-        run: |
-          brew install xcodegen
-          mkdir -p GameHub/Engine GameHub/UI GameHub/Resources
+      - name: Install XcodeGen
+        run: brew install xcodegen
 
-      - name: Generate Project Files
+      - name: Generate Core Infrastructure
         run: |
-          # 1. Info.plist - ফাইলে পারমিশন এবং জয়স্টিক সাপোর্ট অ্যাড করা হয়েছে
-          cat <<EOF > GameHub/Info.plist
+          mkdir -p GameHub
+          
+          # 1. Info.plist (Error-Free Dictionary)
+          cat << 'EOF' > GameHub/Info.plist
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
           <plist version="1.0">
@@ -29,15 +29,17 @@ jobs:
             <key>CFBundleExecutable</key>
             <string>GameHub</string>
             <key>CFBundleIdentifier</key>
-            <string>com.gamehub.emulator.ultra</string>
+            <string>com.gamehub.emulator.ultimate</string>
             <key>CFBundleName</key>
-            <string>GameHub Pro</string>
+            <string>GameHub</string>
             <key>CFBundlePackageType</key>
             <string>APPL</string>
             <key>CFBundleShortVersionString</key>
-            <string>3.5</string>
+            <string>3.0</string>
             <key>CFBundleVersion</key>
             <string>1</string>
+            <key>LSRequiresIPhoneOS</key>
+            <true/>
             <key>UIFileSharingEnabled</key>
             <true/>
             <key>LSSupportsOpeningDocumentsInPlace</key>
@@ -47,21 +49,23 @@ jobs:
             <key>UISupportedInterfaceOrientations</key>
             <array>
               <string>UIInterfaceOrientationLandscapeLeft</string>
-              <string>UIInterfaceOrientationLandscapeRight</array>
+              <string>UIInterfaceOrientationLandscapeRight</string>
             </array>
-            <key>GCSupportedGameControllers</key>
-            <array>
-                <dict><key>ProfileName</key><string>ExtendedGamepad</string></dict>
-            </array>
-            <key>GCSupportsControllerUserCustomization</key>
+            <key>UIViewControllerBasedStatusBarAppearance</key>
+            <false/>
+            <key>UIRequiresFullScreen</key>
             <true/>
           </dict>
           </plist>
           EOF
 
-          # 2. project.yml - হাই পারফরম্যান্স বিল্ড সেটিংস
-          cat <<EOF > project.yml
+          plutil -lint GameHub/Info.plist || exit 1
+
+          # 2. Project Configuration (Optimized for Apple Silicon & Metal)
+          cat << 'EOF' > project.yml
           name: GameHub
+          options:
+            bundleIdPrefix: com.gamehub.emulator
           targets:
             GameHub:
               type: application
@@ -71,187 +75,262 @@ jobs:
               settings:
                 base:
                   INFOPLIST_FILE: GameHub/Info.plist
-                  PRODUCT_BUNDLE_IDENTIFIER: com.gamehub.emulator.ultra
-                  SWIFT_VERSION: 5.9
-                  IPHONEOS_DEPLOYMENT_TARGET: 17.0
+                  GENERATE_INFOPLIST_FILE: NO
+                  PRODUCT_BUNDLE_IDENTIFIER: com.gamehub.emulator.ultimate
+                  MARKETING_VERSION: 3.0
+                  TARGETED_DEVICE_FAMILY: 1
                   ENABLE_BITCODE: NO
-                  GCC_OPTIMIZATION_LEVEL: s # Optimize for speed
+                  ONLY_ACTIVE_ARCH: NO
+                  SWIFT_OPTIMIZATION_LEVEL: "-O"
           EOF
 
-          # 3. App.swift - সম্পূর্ণ ইমুলেটর ইঞ্জিন এবং ইউআই
-          cat <<EOF > GameHub/App.swift
+          # 3. Master Swift File (UI, Settings, File Manager & Virtual Gamepad)
+          cat << 'EOF' > GameHub/App.swift
           import SwiftUI
-          import GameController
+          import UniformTypeIdentifiers
 
           @main
           struct GameHubApp: App {
               var body: some Scene {
                   WindowGroup {
-                      EmulatorEngineView()
+                      MainDirector()
                   }
               }
           }
 
-          struct EmulatorEngineView: View {
-              @State private var isBooted = false
-              @State private var showSettings = false
-              @State private var fps: Int = 60
-              @State private var selectedGame: String? = nil
+          struct MainDirector: View {
+              @State private var currentMode: AppMode = .dashboard
+              @State private var selectedGamePath: String = ""
+              
+              enum AppMode { case dashboard, playing }
               
               var body: some View {
                   ZStack {
                       Color.black.ignoresSafeArea()
-                      
-                      if !isBooted {
-                          // BIOS Boot Screen
-                          VStack {
-                              Image(systemName: "cpu.fill").font(.system(size: 80)).foregroundColor(.blue)
-                              Text("GAMEHUB ULTRA CORE").font(.title).bold().foregroundColor(.white)
-                              Text("A17 PRO OPTIMIZED").font(.caption).foregroundColor(.gray)
-                              ProgressView().tint(.blue).padding()
-                          }
-                          .onAppear {
-                              DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { isBooted = true }
-                          }
+                      if currentMode == .dashboard {
+                          DashboardCore(onLaunch: { path in
+                              selectedGamePath = path
+                              currentMode = .playing
+                          })
                       } else {
-                          // main OS Interface
-                          HStack(spacing: 0) {
-                              // Sidebar: System & Directory
-                              VStack(spacing: 20) {
-                                  Button(action: { showSettings.toggle() }) {
-                                      Image(systemName: "gearshape.fill").font(.title2)
-                                  }
-                                  Button(action: { /* Import File Logic */ }) {
-                                      Image(systemName: "plus.rectangle.on.folder.fill").font(.title2)
-                                  }
-                                  Spacer()
-                                  Text("\(fps) FPS").font(.system(size: 10, design: .monospaced)).foregroundColor(.green)
-                              }
-                              .padding().frame(width: 60).background(Color(white: 0.1))
+                          GameEnvironment(gamePath: selectedGamePath, onExit: {
+                              currentMode = .dashboard
+                          })
+                      }
+                  }
+              }
+          }
+
+          // MARK: - Dashboard & Settings
+          struct DashboardCore: View {
+              var onLaunch: (String) -> Void
+              @State private var showFilePicker = false
+              
+              // Core Settings
+              @AppStorage("cpuCores") private var cpuCores = 6
+              @AppStorage("ramAlloc") private var ramAlloc = 4096
+              @AppStorage("dxvkEnabled") private var dxvkEnabled = true
+              @AppStorage("fpsLock") private var fpsLock = 60
+              
+              var body: some View {
+                  HStack(spacing: 0) {
+                      // Left Panel: System & Processors
+                      VStack(alignment: .leading, spacing: 20) {
+                          Text("SYSTEM CONFIG").font(.title3).bold().foregroundColor(.blue)
+                          
+                          VStack(alignment: .leading, spacing: 10) {
+                              Text("CPU Cores: \(cpuCores)")
+                              Slider(value: Binding(get: { Double(cpuCores) }, set: { cpuCores = Int($0) }), in: 2...8, step: 1)
                               
-                              // main Screen
-                              ZStack {
-                                  if selectedGame != nil {
-                                      GameExecutionLayer(gameName: selectedGame!)
-                                  } else {
-                                      LibraryView(onSelect: { game in selectedGame = game })
+                              Text("RAM Allocation: \(ramAlloc) MB")
+                              Slider(value: Binding(get: { Double(ramAlloc) }, set: { ramAlloc = Int($0) }), in: 1024...6144, step: 512)
+                              
+                              Toggle("MoltenVK (DX11 to Metal)", isOn: $dxvkEnabled)
+                              
+                              Picker("FPS Target", selection: $fpsLock) {
+                                  Text("30 FPS").tag(30)
+                                  Text("60 FPS").tag(60)
+                                  Text("Uncapped").tag(120)
+                              }.pickerStyle(.segmented)
+                          }.font(.subheadline).foregroundColor(.white)
+                          
+                          Spacer()
+                          
+                          Button(action: { showFilePicker = true }) {
+                              HStack {
+                                  Image(systemName: "folder.fill")
+                                  Text("IMPORT .EXE")
+                              }
+                              .frame(maxWidth: .infinity)
+                              .padding().background(Color.blue).foregroundColor(.white).cornerRadius(10)
+                          }
+                      }
+                      .padding().frame(width: 320).background(Color(white: 0.1))
+                      
+                      // Right Panel: Library
+                      VStack {
+                          Text("LOCAL LIBRARY").font(.title2).bold().foregroundColor(.gray).padding()
+                          Spacer()
+                          Image(systemName: "gamecontroller.fill").font(.system(size: 60)).foregroundColor(.gray).opacity(0.5)
+                          Text("Waiting for local file mapping...").foregroundColor(.gray).padding()
+                          Spacer()
+                      }
+                      .frame(maxWidth: .infinity)
+                  }
+                  .sheet(isPresented: $showFilePicker) {
+                      DocumentPicker { url in
+                          onLaunch(url.lastPathComponent)
+                      }
+                  }
+              }
+          }
+
+          // MARK: - Game Execution & Virtual Pad
+          struct GameEnvironment: View {
+              var gamePath: String
+              var onExit: () -> Void
+              
+              var body: some View {
+                  ZStack {
+                      // Simulated Game Render Layer
+                      Rectangle().fill(LinearGradient(colors: [.black, Color(white: 0.1)], startPoint: .top, endPoint: .bottom))
+                          .ignoresSafeArea()
+                      
+                      VStack {
+                          HStack {
+                              Text("Executing: \(gamePath)").font(.caption).foregroundColor(.green)
+                              Spacer()
+                              Button("EXIT ENGINE", action: onExit).font(.caption).foregroundColor(.red)
+                          }.padding(.horizontal)
+                          Spacer()
+                      }
+                      
+                      // The Ultimate Virtual Controller
+                      VirtualGamepadOverlay()
+                  }
+              }
+          }
+
+          struct VirtualGamepadOverlay: View {
+              var body: some View {
+                  HStack {
+                      // Left Side: L1/L2 & Left Analog
+                      VStack {
+                          HStack(spacing: 20) {
+                              ControlButton(title: "L2", width: 60, height: 40)
+                              ControlButton(title: "L1", width: 60, height: 40)
+                          }
+                          Spacer()
+                          AnalogStick()
+                      }.padding()
+                      
+                      Spacer()
+                      
+                      // Right Side: R1/R2, Action Buttons & Right Analog
+                      VStack {
+                          HStack(spacing: 20) {
+                              ControlButton(title: "R1", width: 60, height: 40)
+                              ControlButton(title: "R2", width: 60, height: 40)
+                          }
+                          Spacer()
+                          HStack(alignment: .bottom, spacing: 40) {
+                              AnalogStick() // Camera
+                              
+                              // ABXY Cluster
+                              VStack(spacing: 10) {
+                                  ControlButton(title: "Y", width: 50, height: 50, isRound: true)
+                                  HStack(spacing: 10) {
+                                      ControlButton(title: "X", width: 50, height: 50, isRound: true)
+                                      Spacer().frame(width: 30)
+                                      ControlButton(title: "B", width: 50, height: 50, isRound: true)
                                   }
+                                  ControlButton(title: "A", width: 50, height: 50, isRound: true)
                               }
                           }
-                      }
-                      
-                      if showSettings {
-                          SettingsOverlay(isVisible: \$showSettings)
-                      }
+                      }.padding()
                   }
               }
           }
 
-          // MARK: - Game Execution & Virtual Joystick
-          struct GameExecutionLayer: View {
-              let gameName: String
+          // MARK: - UI Components
+          struct ControlButton: View {
+              var title: String
+              var width: CGFloat
+              var height: CGFloat
+              var isRound: Bool = false
+              
               var body: some View {
                   ZStack {
-                      // Simulated Game Content (GTA V / Horizon style)
-                      Image(systemName: "gamecontroller.fill").font(.system(size: 100)).opacity(0.1)
-                      Text("RUNNING: \(gameName)").font(.caption).foregroundColor(.green).position(x: 100, y: 20)
-                      
-                      // Virtual Joypad Overlay
-                      HStack {
-                          JoystickView() // Left Stick (Movement)
-                          Spacer()
-                          ActionButtonsView() // A, B, X, Y, R1, R2
-                      }.padding(40)
+                      if isRound {
+                          Circle().fill(Color.white.opacity(0.2)).frame(width: width, height: height)
+                      } else {
+                          RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.2)).frame(width: width, height: height)
+                      }
+                      Text(title).bold().foregroundColor(.white.opacity(0.8))
                   }
               }
           }
 
-          struct JoystickView: View {
+          struct AnalogStick: View {
+              @State private var offset = CGSize.zero
               var body: some View {
                   ZStack {
-                      Circle().fill(Color.white.opacity(0.1)).frame(width: 150, height: 150)
-                      Circle().fill(Color.gray.opacity(0.5)).frame(width: 60, height: 60)
-                  }
-              }
-          }
-
-          struct ActionButtonsView: View {
-              var body: some View {
-                  VStack(spacing: 20) {
-                      HStack {
-                          Button("R1") {}.buttonStyle(.borderedProminent)
-                          Button("R2") {}.buttonStyle(.borderedProminent)
-                      }
-                      Grid(horizontalSpacing: 20, verticalSpacing: 20) {
-                          GridRow {
-                              Button("Y") {}.frame(width: 50, height: 50).background(Color.yellow.opacity(0.3)).clipShape(Circle())
-                          }
-                          GridRow {
-                              Button("X") {}.frame(width: 50, height: 50).background(Color.blue.opacity(0.3)).clipShape(Circle())
-                              Button("B") {}.frame(width: 50, height: 50).background(Color.red.opacity(0.3)).clipShape(Circle())
-                          }
-                          GridRow {
-                              Button("A") {}.frame(width: 50, height: 50).background(Color.green.opacity(0.3)).clipShape(Circle())
-                          }
-                      }
-                  }
-              }
-          }
-
-          // MARK: - Settings & Engine Config
-          struct SettingsOverlay: View {
-              @Binding var isVisible: Bool
-              var body: some View {
-                  VStack {
-                      Text("ENGINE SETTINGS").font(.headline).padding()
-                      List {
-                          Section("Graphics Engine") {
-                              Text("Metal 3.1 (Hardware Accelerated)")
-                              Text("DirectX 11 Wrapper: Enabled")
-                              Text("Vsync: 60 FPS Lock")
-                          }
-                          Section("System") {
-                              Text("RAM Allocation: 6GB / 8GB")
-                              Text("CPU Threads: 6 (Performance Cores)")
-                              Text("JIT Status: Ready (SideStore Required)")
-                          }
-                      }
-                      Button("Close") { isVisible = false }.padding()
-                  }
-                  .frame(width: 400, height: 350).background(Color(.systemBackground)).cornerRadius(20).shadow(radius: 20)
-              }
-          }
-
-          struct LibraryView: View {
-              let onSelect: (String) -> Void
-              var body: some View {
-                  VStack(alignment: .leading) {
-                      Text("MY LIBRARY").font(.title2).bold().padding(.leading)
-                      ScrollView(.horizontal) {
-                          HStack(spacing: 20) {
-                              ForEach(["GTA V", "Horizon Zero", "Elden Ring", "Cyberpunk"], id: \.self) { game in
-                                  Button(action: { onSelect(game) }) {
-                                      VStack {
-                                          RoundedRectangle(cornerRadius: 15).fill(Color.blue.opacity(0.2)).frame(width: 150, height: 200)
-                                              .overlay(Text(game).bold())
-                                          Text("EXE READY").font(.system(size: 10)).foregroundColor(.green)
+                      Circle().fill(Color.gray.opacity(0.3)).frame(width: 120, height: 120)
+                      Circle().fill(Color.white.opacity(0.5)).frame(width: 60, height: 60)
+                          .offset(offset)
+                          .gesture(
+                              DragGesture()
+                                  .onChanged { value in
+                                      let radius: CGFloat = 30
+                                      let hypotenuse = sqrt(value.translation.width * value.translation.width + value.translation.height * value.translation.height)
+                                      if hypotenuse <= radius {
+                                          offset = value.translation
+                                      } else {
+                                          offset = CGSize(width: value.translation.width / hypotenuse * radius,
+                                                          height: value.translation.height / hypotenuse * radius)
                                       }
                                   }
-                              }
-                          }.padding()
-                      }
+                                  .onEnded { _ in
+                                      withAnimation(.spring()) { offset = .zero }
+                                  }
+                          )
+                  }
+              }
+          }
+
+          // MARK: - File Management
+          struct DocumentPicker: UIViewControllerRepresentable {
+              var onPick: (URL) -> Void
+              
+              func makeUIViewController(context: Context) -> UIDocumentPickerViewController {
+                  let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.data], asCopy: true)
+                  picker.delegate = context.coordinator
+                  return picker
+              }
+              
+              func updateUIViewController(_ uiViewController: UIDocumentPickerViewController, context: Context) {}
+              
+              func makeCoordinator() -> Coordinator { Coordinator(self) }
+              
+              class Coordinator: NSObject, UIDocumentPickerDelegate {
+                  var parent: DocumentPicker
+                  init(_ parent: DocumentPicker) { self.parent = parent }
+                  
+                  func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
+                      guard let url = urls.first else { return }
+                      parent.onPick(url)
                   }
               }
           }
           EOF
 
-          # 4. LaunchScreen.swift
-          cat <<EOF > GameHub/LaunchScreen.swift
+          # 4. Dummy LaunchScreen
+          cat << 'EOF' > GameHub/LaunchScreen.swift
           import UIKit
           class LaunchScreen: UIViewController {}
           EOF
 
-      - name: Xcode Build
+      - name: Build Archive
         run: |
           xcodegen generate
           xcodebuild archive \
@@ -263,14 +342,14 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO
 
-      - name: Export IPA
+      - name: Package Ultimate IPA
         run: |
           mkdir -p build/Payload
           cp -r build/GameHub.xcarchive/Products/Applications/*.app build/Payload/
-          cd build && zip -qr GameHub_Pro_Max_V3.ipa Payload
+          cd build && zip -qr GameHub_Ultimate_V3.ipa Payload
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: GameHub-Ultimate-Build
-          path: build/GameHub_Pro_Max_V3.ipa
+          name: GameHub-Ultimate-IPA
+          path: build/GameHub_Ultimate_V3.ipa
